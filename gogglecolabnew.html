@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Brightness Logger</title>
+  <style>
+    video {
+      width: 100%;
+      max-width: 400px;
+      height: auto;
+      border: 2px solid #444;
+    }
+    button {
+      margin: 10px;
+      padding: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Camera Brightness Logger</h2>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+  <br>
+  <button onclick="startLogging()">Start Logging</button>
+  <button onclick="stopLogging()">Stop Logging</button>
+
+  <script>
+    let video = document.getElementById('video');
+    let canvas = document.getElementById('canvas');
+    let context = canvas.getContext('2d');
+    let logging = false;
+    let stream;
+    let logInterval;
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        video.srcObject = stream;
+        console.log("Camera started.");
+      } catch (err) {
+        alert("Camera access denied or failed: " + err.message);
+        console.error("Camera error:", err);
+      }
+    }
+
+    function calculateBrightness(imageData) {
+      let data = imageData.data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        sum += avg;
+      }
+      return Math.floor(sum / (data.length / 4));
+    }
+
+    function logBrightness() {
+      if (!logging) return;
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      let imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      let brightness = calculateBrightness(imageData);
+      let timestamp = new Date().toISOString();
+
+      // Send to Python kernel in Colab
+      if (google?.colab?.kernel?.invokeFunction) {
+        google.colab.kernel.invokeFunction(
+          'logFrameColab', [timestamp, brightness], {}
+        ).then(() => console.log("Logged:", timestamp, brightness));
+      } else {
+        console.warn("Not running in Colab or unable to call kernel function.");
+      }
+    }
+
+    function startLogging() {
+      if (!logging) {
+        logging = true;
+        logInterval = setInterval(logBrightness, 1000);
+        console.log("Started logging...");
+      }
+    }
+
+    function stopLogging() {
+      logging = false;
+      clearInterval(logInterval);
+      console.log("Stopped logging.");
+    }
+
+    // Start camera immediately
+    startCamera();
+  </script>
+</body>
+</html>
