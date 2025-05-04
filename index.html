@@ -65,7 +65,7 @@
       let brightness = calculateBrightness(imageData);
       let timestamp = new Date().toISOString();
 
-      // Send to Python kernel in Colab
+      // Send to Python in Colab
       if (google?.colab?.kernel?.invokeFunction) {
         google.colab.kernel.invokeFunction(
           'logFrameColab', [timestamp, brightness], {}
@@ -89,7 +89,7 @@
       console.log("Stopped logging.");
     }
 
-    // Start camera immediately
+    // Start camera on page load
     startCamera();
   </script>
 </body>
