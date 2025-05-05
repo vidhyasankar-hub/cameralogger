@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Interactive Intensity Plot</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            text-align: center;
+        }
+        #controls {
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        select, input[type="file"] {
+            padding: 5px;
+            font-size: 16px;
+        }
+        #plot {
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Interactive Time vs. Intensity Plot</h2>
+
+<div id="controls">
+    <input type="file" id="csvFile" accept=".csv" />
+    
+    <div>
+        X-axis Scale:
+        <select id="xScale">
+            <option value="linear">Linear</option>
+            <option value="log">Log</option>
+        </select>
+    </div>
+
+    <div>
+        Y-axis Scale:
+        <select id="yScale">
+            <option value="linear">Linear</option>
+            <option value="log">Log</option>
+        </select>
+    </div>
+
+    <div>
+        Show Grid:
+        <select id="gridToggle">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+        </select>
+    </div>
+</div>
+
+<div id="plot"></div>
+
+<script>
+    let time = [], intensity = [];
+
+    document.getElementById('csvFile').addEventListener('change', function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            const lines = event.target.result.split('\n');
+            time = [];
+            intensity = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const [t, y] = lines[i].split(',');
+                if (!isNaN(parseFloat(t)) && !isNaN(parseFloat(y))) {
+                    time.push(parseFloat(t));
+                    intensity.push(parseFloat(y));
+                }
+            }
+            updatePlot();
+        };
+        reader.readAsText(file);
+    });
+
+    document.getElementById('xScale').addEventListener('change', updatePlot);
+    document.getElementById('yScale').addEventListener('change', updatePlot);
+    document.getElementById('gridToggle').addEventListener('change', updatePlot);
+
+    function updatePlot() {
+        const xScale = document.getElementById('xScale').value;
+        const yScale = document.getElementById('yScale').value;
+        const showGrid = document.getElementById('gridToggle').value === 'true';
+
+        const trace = {
+            x: time,
+            y: intensity,
+            mode: 'lines+markers',
+            type: 'scatter',
+            name: 'Intensity'
+        };
+
+        const layout = {
+            xaxis: {
+                title: 'Time',
+                type: xScale,
+                showgrid: showGrid
+            },
+            yaxis: {
+                title: 'Intensity',
+                type: yScale,
+                showgrid: showGrid
+            },
+            margin: { l: 40, r: 40, t: 40, b: 40 },
+        };
+
+        Plotly.newPlot('plot', [trace], layout);
+    }
+</script>
+
+</body>
+</html>
