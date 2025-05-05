@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Camera Brightness Logger</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      border: 2px solid #333;
+    }
+    button {
+      margin: 10px 5px;
+      padding: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Camera Brightness Logger</h2>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+  <br>
+  <button onclick="startLogging()">Start Logging</button>
+  <button onclick="stopLogging()">Stop & Download CSV</button>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+
+    let logging = false;
+    let logInterval;
+    const logData = [];
+    let startTime = null;
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        video.srcObject = stream;
+        console.log("Camera started.");
+      } catch (err) {
+        alert("Camera access denied or failed: " + err.message);
+        console.error(err);
+      }
+    }
+
+    function calculateBrightness(imageData) {
+      const data = imageData.data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        sum += avg;
+      }
+      return Math.floor(sum / (data.length / 4));
+    }
+
+    function logBrightness() {
+      if (!startTime) startTime = Date.now();
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const brightness = calculateBrightness(imageData);
+      logData.push([elapsedSeconds, brightness]);
+      console.log("Logged:", elapsedSeconds, brightness);
+    }
+
+    function startLogging() {
+      if (!logging) {
+        logging = true;
+        startTime = null;
+        logData.length = 0;
+        logInterval = setInterval(logBrightness, 1000);
+        console.log("Started logging...");
+      }
+    }
+
+    function stopLogging() {
+      if (logging) {
+        logging = false;
+        clearInterval(logInterval);
+        console.log("Stopped logging.");
+        downloadCSV(logData);
+      }
+    }
+
+    function downloadCSV(data) {
+      let csvContent = "data:text/csv;charset=utf-8,Time (s),Brightness\n";
+      data.forEach(row => {
+        csvContent += row.join(",") + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "brightness_log.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
