@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Camera Brightness Logger</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    video { width: 100%; max-width: 400px; border: 1px solid black; }
+    button { margin: 5px; padding: 10px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h2>Brightness Logger</h2>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" width="320" height="240" style="display:none;"></canvas><br>
+  <button onclick="startLogging()">Start</button>
+  <button onclick="stopLogging()">Stop</button>
+  <button onclick="downloadCSV()">Download CSV</button>
+
+  <script>
+    let video = document.getElementById('video');
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    let stream;
+    let logInterval;
+    let data = [];
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+      } catch (e) {
+        alert("Camera access error: " + e.message);
+      }
+    }
+
+    function calculateBrightness(imageData) {
+      let pixels = imageData.data;
+      let sum = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        let avg = (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
+        sum += avg;
+      }
+      return Math.floor(sum / (pixels.length / 4));
+    }
+
+    function logBrightness() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let brightness = calculateBrightness(imageData);
+      let timestamp = new Date().toISOString();
+      data.push([timestamp, brightness]);
+      console.log("Logged:", timestamp, brightness);
+    }
+
+    function startLogging() {
+      data = [["Timestamp", "Brightness"]];
+      logInterval = setInterval(logBrightness, 1000);
+    }
+
+    function stopLogging() {
+      clearInterval(logInterval);
+    }
+
+    function downloadCSV() {
+      let csvContent = data.map(e => e.join(",")).join("\n");
+      let blob = new Blob([csvContent], { type: "text/csv" });
+      let url = URL.createObjectURL(blob);
+      let a = document.createElement("a");
+      a.href = url;
+      a.download = "brightness_log.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    startCamera();
+  </script>
+</body>
+</html>
