@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Camera Brightness Logger</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      text-align: center;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      border: 2px solid #333;
+    }
+    button {
+      margin: 10px 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2>Camera Brightness Logger</h2>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+  <br>
+  <button onclick="startLogging()">Start Logging</button>
+  <button onclick="stopLogging()">Stop & Download CSV</button>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+
+    let logging = false;
+    let logInterval;
+    const logData = [];
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        video.srcObject = stream;
+        console.log("Camera started.");
+      } catch (err) {
+        alert("Camera access denied or failed: " + err.message);
+        console.error(err);
+      }
+    }
+
+    function calculateBrightness(imageData) {
+      const data = imageData.data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        sum += avg;
+      }
+      return Math.floor(sum / (data.length / 4));
+    }
+
+    function logBrightness() {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const brightness = calculateBrightness(imageData);
+      const timestamp = new Date().toISOString();
+      logData.push([timestamp, brightness]);
+      console.log("Logged:", timestamp, brightness);
+    }
+
+    function startLogging() {
+      if (!logging) {
+        logging = true;
+        logData.length = 0; // Clear previous data
+        logInterval = setInterval(logBrightness, 1000); // Log every second
+        console.log("Started logging...");
+      }
+    }
+
+    function stopLogging() {
+      if (logging) {
+        logging = false;
+        clearInterval(logInterval);
+        console.log("Stopped logging.");
+        downloadCSV(logData);
+      }
+    }
+
+    function downloadCSV(data) {
+      let csvContent = '\uFEFFTimestamp,Brightness\r\n';
+      data.forEach(row => {
+        csvContent += row.join(',') + '\r\n';
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute("href", url);
+      link.setAttribute("download", "brightness_log.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    // Start camera on load
+    startCamera();
+  </script>
+</body>
+</html>
