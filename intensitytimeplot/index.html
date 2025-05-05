@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Time vs Intensity Plot</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 20px;
+      background: #f4f6f8;
+      color: #333;
+      text-align: center;
+    }
+    #controls {
+      margin: 20px auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+    }
+    select, input[type="file"], input[type="text"], input[type="color"], input[type="range"], button {
+      font-size: 18px;
+      font-weight: bold;
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    #plot {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .label {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Time vs. Intensity Graph (Interactive)</h2>
+
+<div id="controls">
+
+  <input type="file" id="csvFile" accept=".csv">
+  <button id="uploadStatus" disabled>Upload a .csv file</button>
+  <button id="plotBtn" disabled>Plot Graph</button>
+
+  <div id="adjustControls" class="hidden">
+    <div>
+      <span class="label">Graph Title:</span>
+      <input type="text" id="graphTitle" value="Time vs. Intensity">
+    </div>
+
+    <div>
+      <span class="label">X-axis Scale:</span>
+      <select id="xScale">
+        <option value="linear">Linear</option>
+        <option value="log">Log</option>
+      </select>
+    </div>
+
+    <div>
+      <span class="label">Y-axis Scale:</span>
+      <select id="yScale">
+        <option value="linear">Linear</option>
+        <option value="log">Log</option>
+      </select>
+    </div>
+
+    <div>
+      <span class="label">X-axis Tick Interval:</span>
+      <select id="xTickSpacing">
+        <option value="auto">Auto</option>
+        <option value="1">1</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+    </div>
+
+    <div>
+      <span class="label">Y-axis Tick Interval:</span>
+      <select id="yTickSpacing">
+        <option value="auto">Auto</option>
+        <option value="1">1</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+    </div>
+
+    <div>
+      <span class="label">Show Grid:</span>
+      <select id="gridToggle">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </div>
+
+    <div>
+      <span class="label">Line Color:</span>
+      <input type="color" id="lineColor" value="#007bff">
+    </div>
+
+    <div>
+      <span class="label">Line Type:</span>
+      <select id="lineType">
+        <option value="solid">Solid</option>
+        <option value="dash">Dashed</option>
+        <option value="dot">Dotted</option>
+      </select>
+    </div>
+
+    <div>
+      <span class="label">Marker Size:</span>
+      <input type="range" id="markerSize" min="2" max="20" value="8">
+    </div>
+
+    <button onclick="resetControls()">Reset All</button>
+  </div>
+</div>
+
+<div id="plot"></div>
+
+<script>
+  let time = [], intensity = [];
+  let fileLoaded = false;
+
+  document.getElementById('csvFile').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    const uploadBtn = document.getElementById('uploadStatus');
+    const plotBtn = document.getElementById('plotBtn');
+
+    if (!file) {
+      uploadBtn.textContent = "No file selected";
+      uploadBtn.style.background = "gray";
+      plotBtn.disabled = true;
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (event) {
+      const lines = event.target.result.trim().split('\n');
+      time = [];
+      intensity = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const [t, y] = lines[i].split(',');
+        if (!isNaN(t) && !isNaN(y)) {
+          time.push(parseFloat(t));
+          intensity.push(parseFloat(y));
+        }
+      }
+
+      if (time.length && intensity.length) {
+        fileLoaded = true;
+        uploadBtn.textContent = "Upload Successful!";
+        uploadBtn.style.background = "#28a745";
+        plotBtn.disabled = false;
+      } else {
+        uploadBtn.textContent = "Invalid Data";
+        uploadBtn.style.background = "#dc3545";
+        plotBtn.disabled = true;
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('plotBtn').addEventListener('click', function () {
+    if (fileLoaded) {
+      document.getElementById('adjustControls').classList.remove('hidden');
+      updatePlot();
+    }
+  });
+
+  ['xScale', 'yScale', 'gridToggle', 'lineColor', 'lineType', 'markerSize', 'graphTitle', 'xTickSpacing', 'yTickSpacing']
+    .forEach(id => document.getElementById(id).addEventListener('change', updatePlot));
+
+  function updatePlot() {
+    if (time.length === 0 || intensity.length === 0) return;
+
+    const xScale = document.getElementById('xScale').value;
+    const yScale = document.getElementById('yScale').value;
+    const showGrid = document.getElementById('gridToggle').value === 'true';
+    const lineColor = document.getElementById('lineColor').value;
+    const lineType = document.getElementById('lineType').value;
+    const markerSize = parseInt(document.getElementById('markerSize').value);
+    const graphTitle = document.getElementById('graphTitle').value;
+    const xTickSpacing = document.getElementById('xTickSpacing').value;
+    const yTickSpacing = document.getElementById('yTickSpacing').value;
+
+    const dashMap = { solid: 'solid', dash: 'dash', dot: 'dot' };
+
+    const trace = {
+      x: time,
+      y: intensity,
+      mode: 'lines+markers',
+      type: 'scatter',
+      name: 'Intensity',
+      line: { color: lineColor, dash: dashMap[lineType] },
+      marker: { color: '#ff4d4d', size: markerSize }
+    };
+
+    const layout = {
+      title: graphTitle,
+      xaxis: {
+        title: 'Time',
+        type: xScale,
+        showgrid: showGrid,
+        gridcolor: 'red',
+        gridwidth: 1,
+        zeroline: false,
+        linecolor: 'black',
+        linewidth: 3,
+        mirror: true,
+        dtick: xTickSpacing === 'auto' ? undefined : parseFloat(xTickSpacing)
+      },
+      yaxis: {
+        title: 'Intensity',
+        type: yScale,
+        showgrid: showGrid,
+        gridcolor: 'red',
+        gridwidth: 1,
+        zeroline: false,
+        linecolor: 'black',
+        linewidth: 3,
+        mirror: true,
+        dtick: yTickSpacing === 'auto' ? undefined : parseFloat(yTickSpacing)
+      },
+      margin: { l: 50, r: 30, t: 50, b: 50 },
+      plot_bgcolor: "#ffffff",
+      paper_bgcolor: "#ffffff"
+    };
+
+    Plotly.newPlot('plot', [trace], layout);
+  }
+
+  function resetControls() {
+    document.getElementById('xScale').value = 'linear';
+    document.getElementById('yScale').value = 'linear';
+    document.getElementById('gridToggle').value = 'true';
+    document.getElementById('lineColor').value = '#007bff';
+    document.getElementById('lineType').value = 'solid';
+    document.getElementById('markerSize').value = '8';
+    document.getElementById('graphTitle').value = 'Time vs. Intensity';
+    document.getElementById('xTickSpacing').value = 'auto';
+    document.getElementById('yTickSpacing').value = 'auto';
+    updatePlot();
+  }
+</script>
+
+</body>
+</html>
