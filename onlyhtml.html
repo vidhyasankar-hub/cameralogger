@@ -83,13 +83,13 @@
         logging = false;
         clearInterval(logInterval);
         console.log("Stopped logging.");
-        downloadCSV();
+        downloadCSV(logData); // Pass logData to downloadCSV function
       }
     }
 
-    function downloadCSV() {
+    function downloadCSV(data) {
       let csvContent = "data:text/csv;charset=utf-8,Timestamp,Brightness\n";
-      logData.forEach(row => {
+      data.forEach(row => {
         csvContent += row.join(",") + "\n";
       });
 
