@@ -1,77 +1,108 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Camera Brightness Logger</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    video { width: 100%; max-width: 400px; border: 1px solid black; }
-    button { margin: 5px; padding: 10px; font-size: 16px; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      border: 2px solid #333;
+    }
+    button {
+      margin: 10px 5px;
+      padding: 10px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
-  <h2>Brightness Logger</h2>
+  <h2>Camera Brightness Logger</h2>
   <video id="video" autoplay playsinline></video>
-  <canvas id="canvas" width="320" height="240" style="display:none;"></canvas><br>
-  <button onclick="startLogging()">Start</button>
-  <button onclick="stopLogging()">Stop</button>
-  <button onclick="downloadCSV()">Download CSV</button>
+  <canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+  <br>
+  <button onclick="startLogging()">Start Logging</button>
+  <button onclick="stopLogging()">Stop & Download CSV</button>
 
   <script>
-    let video = document.getElementById('video');
-    let canvas = document.getElementById('canvas');
-    let ctx = canvas.getContext('2d');
-    let stream;
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+
+    let logging = false;
     let logInterval;
-    let data = [];
+    const logData = [];
 
     async function startCamera() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
         video.srcObject = stream;
-      } catch (e) {
-        alert("Camera access error: " + e.message);
+        console.log("Camera started.");
+      } catch (err) {
+        alert("Camera access denied or failed: " + err.message);
+        console.error(err);
       }
     }
 
     function calculateBrightness(imageData) {
-      let pixels = imageData.data;
+      const data = imageData.data;
       let sum = 0;
-      for (let i = 0; i < pixels.length; i += 4) {
-        let avg = (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
         sum += avg;
       }
-      return Math.floor(sum / (pixels.length / 4));
+      return Math.floor(sum / (data.length / 4));
     }
 
     function logBrightness() {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      let brightness = calculateBrightness(imageData);
-      let timestamp = new Date().toISOString();
-      data.push([timestamp, brightness]);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const brightness = calculateBrightness(imageData);
+      const timestamp = new Date().toISOString();
+      logData.push([timestamp, brightness]);
       console.log("Logged:", timestamp, brightness);
     }
 
     function startLogging() {
-      data = [["Timestamp", "Brightness"]];
-      logInterval = setInterval(logBrightness, 1000);
+      if (!logging) {
+        logging = true;
+        logData.length = 0; // clear previous data
+        logInterval = setInterval(logBrightness, 1000); // every second
+        console.log("Started logging...");
+      }
     }
 
     function stopLogging() {
-      clearInterval(logInterval);
+      if (logging) {
+        logging = false;
+        clearInterval(logInterval);
+        console.log("Stopped logging.");
+        downloadCSV();
+      }
     }
 
     function downloadCSV() {
-      let csvContent = data.map(e => e.join(",")).join("\n");
-      let blob = new Blob([csvContent], { type: "text/csv" });
-      let url = URL.createObjectURL(blob);
-      let a = document.createElement("a");
-      a.href = url;
-      a.download = "brightness_log.csv";
-      a.click();
-      URL.revokeObjectURL(url);
+      let csvContent = "data:text/csv;charset=utf-8,Timestamp,Brightness\n";
+      logData.forEach(row => {
+        csvContent += row.join(",") + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "brightness_log.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
+    // Start the camera immediately
     startCamera();
   </script>
 </body>
