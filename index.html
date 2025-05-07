@@ -3,162 +3,201 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Live Light Signal Logger</title>
+  <title>Light Signal Logger</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      background: #f9f9f9;
-    }
-    video {
-      display: block;
-      margin-bottom: 10px;
-      max-width: 100%;
-    }
-    canvas {
-      display: none;
-    }
-    #chartContainer {
-      height: 300px;
-      width: 100%;
-    }
-    #controls {
-      margin: 15px 0;
-    }
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f8f9fa; }
+    video { display: block; margin: 0 auto 20px; max-width: 100%; }
+    canvas { max-width: 100%; }
+    #controls, #customize, #cameraToggle { margin-top: 20px; }
+    button, label, input { margin: 5px; padding: 10px; }
     #copyMenu {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-    }
-    button {
-      margin-right: 10px;
-      padding: 8px 14px;
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #343a40;
+      color: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
       font-size: 14px;
     }
+    #customize { display: none; }
   </style>
 </head>
 <body>
-  <h1>Live Light Signal Logger</h1>
-  <div id="copyMenu">
-    <button onclick="copyCSV()">Copy CSV to Clipboard</button>
-  </div>
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas"></canvas>
+  <div id="copyMenu" onclick="copyCode()">Copy Script</div>
+  <h2>Light Intensity Logger</h2>
+  <video id="video" autoplay></video>
+  <canvas id="chart" height="100"></canvas>
   <div id="controls">
     <button onclick="startLogging()">Start Logging</button>
-    <button onclick="stopLogging()">Stop & Download CSV</button>
+    <button onclick="stopLogging()">Stop Logging</button>
   </div>
-  <div id="chartContainer">
-    <canvas id="chartCanvas"></canvas>
+  <div id="cameraToggle">
+    <button onclick="toggleCamera()">Toggle Camera</button>
+  </div>
+  <div id="customize">
+    <h3>Customize Graph</h3>
+    <label>X-axis Min: <input type="number" id="xMin" onchange="updateChart()" /></label>
+    <label>X-axis Max: <input type="number" id="xMax" onchange="updateChart()" /></label>
+    <label>Y-axis Min: <input type="number" id="yMin" onchange="updateChart()" /></label>
+    <label>Y-axis Max: <input type="number" id="yMax" onchange="updateChart()" /></label>
+    <label><input type="checkbox" id="showGrid" checked onchange="updateChart()" /> Show Grid</label>
+    <label><input type="checkbox" id="smooth" onchange="toggleSmoothing()" /> Smooth Curve</label>
+    <button onclick="downloadGraph()">Download Graph</button>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const chartCanvas = document.getElementById('chartCanvas');
-    const ctx = chartCanvas.getContext('2d');
-    const data = [];
+    let video = document.getElementById("video");
+    let chartCanvas = document.getElementById("chart");
+    let chart;
     let logging = false;
+    let data = [];
+    let labels = [];
     let interval;
-    let startTime;
+    let stream = null;
+    let isCameraOn = true;
 
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Brightness',
-          data: [],
-          borderColor: 'blue',
-          fill: false,
-          tension: 0.1
-        }]
-      },
-      options: {
-        responsive: true,
-        animation: false,
-        scales: {
-          x: { title: { display: true, text: 'Time (ms)' }},
-          y: { title: { display: true, text: 'Brightness' }, min: 0, max: 255 }
-        }
+    async function startCamera() {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
       }
-    });
+    }
 
-    async function setupCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-          video.play();
-        };
-      } catch (error) {
-        alert('Camera access denied or not supported.');
-        console.error(error);
+    function toggleCamera() {
+      if (isCameraOn) {
+        stopCamera();
+        isCameraOn = false;
+      } else {
+        startCamera();
+        isCameraOn = true;
       }
     }
 
     function getBrightness(frame) {
-      const len = frame.data.length;
+      let ctx = document.createElement("canvas").getContext("2d");
+      ctx.canvas.width = video.videoWidth;
+      ctx.canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      let pixels = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height).data;
       let total = 0;
-      for (let i = 0; i < len; i += 4) {
-        const r = frame.data[i];
-        const g = frame.data[i + 1];
-        const b = frame.data[i + 2];
-        const brightness = (r + g + b) / 3;
-        total += brightness;
+      for (let i = 0; i < pixels.length; i += 4) {
+        total += (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
       }
-      return total / (len / 4);
-    }
-
-    function captureFrame() {
-      const context = canvas.getContext('2d');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const frame = context.getImageData(0, 0, canvas.width, canvas.height);
-      const brightness = getBrightness(frame);
-      const now = Date.now() - startTime;
-      data.push({ time: now, brightness });
-      chart.data.labels.push(now);
-      chart.data.datasets[0].data.push(brightness);
-      chart.update('none');
+      return total / (pixels.length / 4);
     }
 
     function startLogging() {
-      if (logging) return;
+      if (!stream) {
+        alert("Camera not started!");
+        return;
+      }
+      data = [];
+      labels = [];
       logging = true;
-      data.length = 0;
-      chart.data.labels = [];
-      chart.data.datasets[0].data = [];
-      chart.update();
-      startTime = Date.now();
-      interval = setInterval(captureFrame, 1);
+      let startTime = Date.now();
+      interval = setInterval(() => {
+        let brightness = getBrightness(video);
+        let timestamp = Date.now() - startTime;
+        labels.push(timestamp);
+        data.push(brightness);
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = data;
+        chart.update();
+      }, 1);
     }
 
     function stopLogging() {
-      logging = false;
       clearInterval(interval);
-      const csv = 'time(ms),brightness\n' + data.map(d => `${d.time},${d.brightness.toFixed(2)}`).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'light_signal.csv';
-      a.click();
-      URL.revokeObjectURL(url);
+      logging = false;
+      downloadCSV();
+      document.getElementById("customize").style.display = "block";
     }
 
-    function copyCSV() {
-      const csv = 'time(ms),brightness\n' + data.map(d => `${d.time},${d.brightness.toFixed(2)}`).join('\n');
-      navigator.clipboard.writeText(csv).then(() => {
-        alert('CSV copied to clipboard!');
-      }, err => {
-        alert('Failed to copy: ' + err);
+    function downloadCSV() {
+      let csv = "Time(ms),Brightness\n";
+      for (let i = 0; i < data.length; i++) {
+        csv += `${labels[i]},${data[i]}\n`;
+      }
+      let blob = new Blob([csv], { type: "text/csv" });
+      let link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "light_signal.csv";
+      link.click();
+    }
+
+    function downloadGraph() {
+      let link = document.createElement("a");
+      link.download = "graph.png";
+      link.href = chartCanvas.toDataURL("image/png");
+      link.click();
+    }
+
+    function toggleSmoothing() {
+      chart.data.datasets[0].cubicInterpolationMode =
+        document.getElementById("smooth").checked ? "monotone" : "default";
+      chart.update();
+    }
+
+    function updateChart() {
+      let xMin = document.getElementById("xMin").value;
+      let xMax = document.getElementById("xMax").value;
+      let yMin = document.getElementById("yMin").value;
+      let yMax = document.getElementById("yMax").value;
+      let showGrid = document.getElementById("showGrid").checked;
+
+      chart.options.scales.x.min = xMin ? Number(xMin) : undefined;
+      chart.options.scales.x.max = xMax ? Number(xMax) : undefined;
+      chart.options.scales.y.min = yMin ? Number(yMin) : undefined;
+      chart.options.scales.y.max = yMax ? Number(yMax) : undefined;
+
+      chart.options.scales.x.grid.display = showGrid;
+      chart.options.scales.y.grid.display = showGrid;
+      chart.update();
+    }
+
+    function copyCode() {
+      navigator.clipboard.writeText(document.documentElement.outerHTML)
+        .then(() => alert("HTML code copied to clipboard!"));
+    }
+
+    function initChart() {
+      chart = new Chart(chartCanvas, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{
+            label: "Brightness",
+            data: [],
+            borderColor: "blue",
+            borderWidth: 1,
+            fill: false,
+            pointRadius: 0,
+            cubicInterpolationMode: "default"
+          }]
+        },
+        options: {
+          responsive: true,
+          animation: false,
+          scales: {
+            x: { title: { display: true, text: "Time (ms)" }, grid: { display: true } },
+            y: { title: { display: true, text: "Brightness" }, grid: { display: true } }
+          }
+        }
       });
     }
 
-    setupCamera();
+    window.onload = () => {
+      startCamera();
+      initChart();
+    };
   </script>
 </body>
 </html>
