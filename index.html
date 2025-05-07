@@ -1,129 +1,207 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Live Light Logger</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Logging with Graph</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; margin: 20px; }
-    video { width: 90%; max-width: 400px; margin: 10px auto; display: block; }
-    canvas { width: 100%; max-width: 700px; margin: 20px auto; }
-    button, input { margin: 10px; padding: 10px; }
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #canvas-container { position: relative; height: 300px; margin-top: 20px; }
+    video { width: 100%; max-width: 400px; border: 2px solid #333; }
+    button { margin: 10px 5px; padding: 10px; font-size: 16px; }
+    #controls { margin-top: 20px; }
+    #graph-container { margin-top: 20px; }
   </style>
 </head>
 <body>
 
-<h2>Live Light Logger</h2>
+<h2>Camera Brightness Logger</h2>
 <video id="video" autoplay playsinline></video>
-<br/>
-<button onclick="toggleCamera()">Toggle Camera</button>
-<button onclick="startLogging()">Start Logging</button>
-<button onclick="stopLogging()">Stop Logging & Download CSV</button>
-<br/>
-<label>X Interval: <input type="number" id="xInterval" value="1" min="1" style="width: 60px;"></label>
-<label>Y Interval: <input type="number" id="yInterval" value="10" min="1" style="width: 60px;"></label>
-<canvas id="chart"></canvas>
+<canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+
+<div id="controls">
+  <button id="toggleCamera" onclick="toggleCamera()">Switch Camera</button>
+  <button id="startLogging" onclick="startLogging()">Start Logging</button>
+  <button id="stopLogging" onclick="stopLogging()">Stop Logging</button>
+  <button id="downloadCSV" onclick="downloadCSV()">Download CSV</button>
+</div>
+
+<div id="graph-container">
+  <canvas id="graph"></canvas>
+</div>
+
+<div id="settings">
+  <h3>Graph Customizations</h3>
+  <label for="xInterval">X Axis Interval:</label>
+  <input type="number" id="xInterval" value="1">
+  <label for="yInterval">Y Axis Interval:</label>
+  <input type="number" id="yInterval" value="5">
+  <button id="exportGraph" onclick="exportGraph()">Export Graph</button>
+</div>
 
 <script>
-let video = document.getElementById("video");
-let usingFront = true;
-let stream = null;
-let logging = false;
-let data = [];
-let intervalId;
+  let frontCamera = true;
+  let logging = false;
+  let logData = [];
+  let startTime = null;
+  let videoStream = null;
 
-async function getCameraStream() {
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-  }
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const context = canvas.getContext('2d');
+  const graphCanvas = document.getElementById('graph');
+  const graphContext = graphCanvas.getContext('2d');
 
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: usingFront ? "user" : "environment" },
-      audio: false
-    });
-    video.srcObject = stream;
-  } catch (e) {
-    alert("Camera error: " + e.message);
-  }
-}
-
-function toggleCamera() {
-  usingFront = !usingFront;
-  getCameraStream();
-}
-
-getCameraStream();
-
-// Chart setup
-const ctx = document.getElementById("chart").getContext("2d");
-const chart = new Chart(ctx, {
-  type: "line",
-  data: {
-    labels: [],
-    datasets: [{
-      label: "Brightness",
-      data: [],
-      borderColor: "blue",
-      borderWidth: 2,
-      fill: false
-    }]
-  },
-  options: {
-    animation: false,
-    scales: {
-      x: {
-        ticks: { stepSize: parseInt(document.getElementById('xInterval').value) }
+  // Initialize chart.js for live graph
+  const chart = new Chart(graphContext, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Brightness',
+        data: [],
+        borderColor: 'rgb(75, 192, 192)',
+        borderWidth: 2,
+        fill: false,
+        tension: 0.1,
+      }]
+    },
+    options: {
+      scales: {
+        x: {
+          title: { display: true, text: 'Time (s)' },
+          ticks: { stepSize: 1 },
+          grid: { display: true },
+        },
+        y: {
+          title: { display: true, text: 'Brightness' },
+          ticks: { stepSize: 5 },
+          grid: { display: true },
+        }
       },
-      y: {
-        ticks: { stepSize: parseInt(document.getElementById('yInterval').value) }
+      plugins: {
+        zoom: {
+          pan: { enabled: true, mode: 'xy' },
+          zoom: { enabled: true, mode: 'xy' }
+        }
       }
     }
-  }
-});
+  });
 
-function getBrightness(frame) {
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  canvas.width = frame.videoWidth;
-  canvas.height = frame.videoHeight;
-  context.drawImage(frame, 0, 0);
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-  let sum = 0;
-  for (let i = 0; i < pixels.length; i += 4) {
-    sum += 0.2126 * pixels[i] + 0.7152 * pixels[i+1] + 0.0722 * pixels[i+2];
+  // Start camera stream
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: frontCamera ? 'environment' : 'user' }
+      });
+      video.srcObject = stream;
+      videoStream = stream;
+      console.log("Camera started.");
+    } catch (err) {
+      alert("Camera access denied or failed: " + err.message);
+      console.error(err);
+    }
   }
-  return sum / (pixels.length / 4);
-}
 
-function startLogging() {
-  if (logging) return;
-  logging = true;
-  data = [];
-  chart.data.labels = [];
-  chart.data.datasets[0].data = [];
-  intervalId = setInterval(() => {
-    const brightness = getBrightness(video);
-    const timestamp = Date.now();
-    data.push([timestamp, brightness]);
-    chart.data.labels.push((timestamp / 1000).toFixed(2));
+  // Toggle camera (front/back)
+  function toggleCamera() {
+    frontCamera = !frontCamera;
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+    }
+    startCamera();
+  }
+
+  // Calculate brightness from video frame
+  function calculateBrightness(imageData) {
+    const data = imageData.data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      sum += avg;
+    }
+    return Math.floor(sum / (data.length / 4));
+  }
+
+  // Log brightness data
+  function logBrightness() {
+    if (!startTime) startTime = Date.now();
+    const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const brightness = calculateBrightness(imageData);
+    logData.push([elapsedSeconds, brightness]);
+
+    // Update graph with new data
+    chart.data.labels.push(elapsedSeconds);
     chart.data.datasets[0].data.push(brightness);
-    chart.options.scales.x.ticks.stepSize = parseInt(document.getElementById('xInterval').value);
-    chart.options.scales.y.ticks.stepSize = parseInt(document.getElementById('yInterval').value);
-    chart.update();
-  }, 100);
-}
 
-function stopLogging() {
-  logging = false;
-  clearInterval(intervalId);
-  const csvContent = "data:text/csv;charset=utf-8," + data.map(e => e.join(",")).join("\n");
-  const link = document.createElement("a");
-  link.href = csvContent;
-  link.download = "brightness_log.csv";
-  link.click();
-}
+    // Update chart with dynamic intervals
+    const xStep = parseInt(document.getElementById('xInterval').value);
+    const yStep = parseInt(document.getElementById('yInterval').value);
+    chart.options.scales.x.ticks.stepSize = xStep;
+    chart.options.scales.y.ticks.stepSize = yStep;
+
+    // Force chart to update
+    chart.update();
+  }
+
+  // Start logging brightness
+  function startLogging() {
+    if (!logging) {
+      logging = true;
+      logData = [];
+      startTime = null;
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      setInterval(logBrightness, 1000);
+    }
+  }
+
+  // Stop logging brightness
+  function stopLogging() {
+    logging = false;
+    console.log("Logging stopped.");
+  }
+
+  // Download CSV
+  function downloadCSV() {
+    let csvContent = "data:text/csv;charset=utf-8,Time (s),Brightness\n";
+    logData.forEach(row => {
+      csvContent += row.join(",") + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "brightness_log.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // Export graph to image
+  function exportGraph() {
+    const xScale = chart.options.scales.x;
+    const yScale = chart.options.scales.y;
+
+    // Get image format and resolution from inputs
+    const imageFormat = 'image/png'; // You can also change this to 'image/jpeg'
+    const resolution = 1.5;  // You can tune this value for better resolution
+
+    const dataUrl = graphCanvas.toDataURL(imageFormat, resolution);
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = 'graph_export.png';
+    link.click();
+  }
+
+  // Initialize camera on page load
+  window.onload = function() {
+    startCamera();
+  };
 </script>
 
 </body>
