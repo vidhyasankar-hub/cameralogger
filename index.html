@@ -78,11 +78,13 @@
     let labels = [];
     let interval;
     let stream = null;
-    let isCameraOn = true;
     let currentFacingMode = "environment"; // Start with back camera
 
     async function startCamera() {
       try {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
         video.srcObject = stream;
       } catch (err) {
@@ -90,15 +92,7 @@
       }
     }
 
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-      }
-    }
-
     function toggleCamera() {
-      stopCamera();
       currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
       startCamera();
     }
@@ -201,6 +195,4 @@
       chart.options.scales.x.grid.display = showGrid;
 
       chart.options.scales.y.min = yMin ? Number(yMin) : undefined;
-      chart.options.scales.y.max = yMax ? Number(yMax) : undefined;
-      chart.options.scales.y.ticks.stepSize = yStep ? Number(yStep) : undefined;
-      chart32
+      chart.options.scales.y.max = yMax ? Number(y44
