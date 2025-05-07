@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Light Signal Logger</title>
+  <title>Advanced Light Signal Logger</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f8f9fa; }
     video { display: block; margin: 0 auto 20px; max-width: 100%; }
     canvas { max-width: 100%; }
     #controls, #customize, #cameraToggle { margin-top: 20px; }
-    button, label, input { margin: 5px; padding: 10px; }
+    button, label, input, select { margin: 5px; padding: 10px; }
     #copyMenu {
       position: fixed;
       top: 10px;
@@ -27,7 +28,7 @@
 </head>
 <body>
   <div id="copyMenu" onclick="copyCode()">Copy Script</div>
-  <h2>Light Intensity Logger</h2>
+  <h2>Advanced Light Intensity Logger</h2>
   <video id="video" autoplay></video>
   <canvas id="chart" height="100"></canvas>
   <div id="controls">
@@ -41,10 +42,30 @@
     <h3>Customize Graph</h3>
     <label>X-axis Min: <input type="number" id="xMin" onchange="updateChart()" /></label>
     <label>X-axis Max: <input type="number" id="xMax" onchange="updateChart()" /></label>
+    <label>X-axis Interval: <input type="number" id="xStep" onchange="updateChart()" /></label>
     <label>Y-axis Min: <input type="number" id="yMin" onchange="updateChart()" /></label>
     <label>Y-axis Max: <input type="number" id="yMax" onchange="updateChart()" /></label>
+    <label>Y-axis Interval: <input type="number" id="yStep" onchange="updateChart()" /></label>
     <label><input type="checkbox" id="showGrid" checked onchange="updateChart()" /> Show Grid</label>
     <label><input type="checkbox" id="smooth" onchange="toggleSmoothing()" /> Smooth Curve</label>
+    <label>Line Color: <input type="color" id="lineColor" value="#0000FF" onchange="updateLineStyle()" /></label>
+    <label>Line Width: <input type="number" id="lineWidth" value="2" min="1" max="10" onchange="updateLineStyle()" /></label>
+    <label>Line Style:
+      <select id="lineStyle" onchange="updateLineStyle()">
+        <option value="solid">Solid</option>
+        <option value="dashed">Dashed</option>
+        <option value="dotted">Dotted</option>
+      </select>
+    </label>
+    <label>Export Width: <input type="number" id="exportWidth" value="800" /></label>
+    <label>Export Height: <input type="number" id="exportHeight" value="600" /></label>
+    <label>Export Format:
+      <select id="exportFormat">
+        <option value="png">PNG</option>
+        <option value="jpeg">JPEG</option>
+        <option value="webp">WEBP</option>
+      </select>
+    </label>
     <button onclick="downloadGraph()">Download Graph</button>
   </div>
 
@@ -58,10 +79,15 @@
     let interval;
     let stream = null;
     let isCameraOn = true;
+    let currentFacingMode = "environment"; // Start with back camera
 
     async function startCamera() {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
+        video.srcObject = stream;
+      } catch (err) {
+        console.error("Error accessing camera: ", err);
+      }
     }
 
     function stopCamera() {
@@ -72,16 +98,12 @@
     }
 
     function toggleCamera() {
-      if (isCameraOn) {
-        stopCamera();
-        isCameraOn = false;
-      } else {
-        startCamera();
-        isCameraOn = true;
-      }
+      stopCamera();
+      currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+      startCamera();
     }
 
-    function getBrightness(frame) {
+    function getBrightness() {
       let ctx = document.createElement("canvas").getContext("2d");
       ctx.canvas.width = video.videoWidth;
       ctx.canvas.height = video.videoHeight;
@@ -104,7 +126,7 @@
       logging = true;
       let startTime = Date.now();
       interval = setInterval(() => {
-        let brightness = getBrightness(video);
+        let brightness = getBrightness();
         let timestamp = Date.now() - startTime;
         labels.push(timestamp);
         data.push(brightness);
@@ -134,10 +156,28 @@
     }
 
     function downloadGraph() {
-      let link = document.createElement("a");
-      link.download = "graph.png";
-      link.href = chartCanvas.toDataURL("image/png");
-      link.click();
+      let exportWidth = parseInt(document.getElementById("exportWidth").value);
+      let exportHeight = parseInt(document.getElementById("exportHeight").value);
+      let exportFormat = document.getElementById("exportFormat").value;
+
+      let tempCanvas = document.createElement("canvas");
+      tempCanvas.width = exportWidth;
+      tempCanvas.height = exportHeight;
+      let tempCtx = tempCanvas.getContext("2d");
+
+      let tempChart = new Chart(tempCtx, {
+        type: "line",
+        data: chart.data,
+        options: chart.options
+      });
+
+      setTimeout(() => {
+        let link = document.createElement("a");
+        link.download = `graph.${exportFormat}`;
+        link.href = tempCanvas.toDataURL(`image/${exportFormat}`);
+        link.click();
+        tempChart.destroy();
+      }, 1000);
     }
 
     function toggleSmoothing() {
@@ -149,55 +189,18 @@
     function updateChart() {
       let xMin = document.getElementById("xMin").value;
       let xMax = document.getElementById("xMax").value;
+      let xStep = document.getElementById("xStep").value;
       let yMin = document.getElementById("yMin").value;
       let yMax = document.getElementById("yMax").value;
+      let yStep = document.getElementById("yStep").value;
       let showGrid = document.getElementById("showGrid").checked;
 
       chart.options.scales.x.min = xMin ? Number(xMin) : undefined;
       chart.options.scales.x.max = xMax ? Number(xMax) : undefined;
+      chart.options.scales.x.ticks.stepSize = xStep ? Number(xStep) : undefined;
+      chart.options.scales.x.grid.display = showGrid;
+
       chart.options.scales.y.min = yMin ? Number(yMin) : undefined;
       chart.options.scales.y.max = yMax ? Number(yMax) : undefined;
-
-      chart.options.scales.x.grid.display = showGrid;
-      chart.options.scales.y.grid.display = showGrid;
-      chart.update();
-    }
-
-    function copyCode() {
-      navigator.clipboard.writeText(document.documentElement.outerHTML)
-        .then(() => alert("HTML code copied to clipboard!"));
-    }
-
-    function initChart() {
-      chart = new Chart(chartCanvas, {
-        type: "line",
-        data: {
-          labels: [],
-          datasets: [{
-            label: "Brightness",
-            data: [],
-            borderColor: "blue",
-            borderWidth: 1,
-            fill: false,
-            pointRadius: 0,
-            cubicInterpolationMode: "default"
-          }]
-        },
-        options: {
-          responsive: true,
-          animation: false,
-          scales: {
-            x: { title: { display: true, text: "Time (ms)" }, grid: { display: true } },
-            y: { title: { display: true, text: "Brightness" }, grid: { display: true } }
-          }
-        }
-      });
-    }
-
-    window.onload = () => {
-      startCamera();
-      initChart();
-    };
-  </script>
-</body>
-</html>
+      chart.options.scales.y.ticks.stepSize = yStep ? Number(yStep) : undefined;
+      chart32
