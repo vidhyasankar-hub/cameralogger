@@ -195,4 +195,26 @@
       chart.options.scales.x.grid.display = showGrid;
 
       chart.options.scales.y.min = yMin ? Number(yMin) : undefined;
-      chart.options.scales.y.max = yMax ? Number(y44
+      chart.options.scales.y.max = yMax ? Number(yMax) : undefined;
+      chart.options.scales.y.ticks.stepSize = yStep ? Number(yStep) : undefined;
+      chart.options.scales.y.grid.display = showGrid;
+
+      chart.update();
+    }
+
+    function updateLineStyle() {
+      let color = document.getElementById("lineColor").value;
+      let width = parseInt(document.getElementById("lineWidth").value);
+      let style = document.getElementById("lineStyle").value;
+
+      let dash = [];
+      if (style === "dashed") dash = [10, 5];
+      else if (style === "dotted") dash = [2, 2];
+
+      chart.data.datasets[0].borderColor = color;
+      chart.data.datasets[0].borderWidth = width;
+      chart.data.datasets[0].borderDash = dash;
+      chart.update();
+    }
+
+    function copy24
