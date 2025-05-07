@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Live Light Signal Logger</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f9f9f9;
+    }
+    video {
+      display: block;
+      margin-bottom: 10px;
+      max-width: 100%;
+    }
+    canvas {
+      display: none;
+    }
+    #chartContainer {
+      height: 300px;
+      width: 100%;
+    }
+    #controls {
+      margin: 15px 0;
+    }
+    #copyMenu {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+    }
+    button {
+      margin-right: 10px;
+      padding: 8px 14px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Live Light Signal Logger</h1>
+  <div id="copyMenu">
+    <button onclick="copyCSV()">Copy CSV to Clipboard</button>
+  </div>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+  <div id="controls">
+    <button onclick="startLogging()">Start Logging</button>
+    <button onclick="stopLogging()">Stop & Download CSV</button>
+  </div>
+  <div id="chartContainer">
+    <canvas id="chartCanvas"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const chartCanvas = document.getElementById('chartCanvas');
+    const ctx = chartCanvas.getContext('2d');
+    const data = [];
+    let logging = false;
+    let interval;
+    let startTime;
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Brightness',
+          data: [],
+          borderColor: 'blue',
+          fill: false,
+          tension: 0.1
+        }]
+      },
+      options: {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: { title: { display: true, text: 'Time (ms)' }},
+          y: { title: { display: true, text: 'Brightness' }, min: 0, max: 255 }
+        }
+      }
+    });
+
+    async function setupCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play();
+        };
+      } catch (error) {
+        alert('Camera access denied or not supported.');
+        console.error(error);
+      }
+    }
+
+    function getBrightness(frame) {
+      const len = frame.data.length;
+      let total = 0;
+      for (let i = 0; i < len; i += 4) {
+        const r = frame.data[i];
+        const g = frame.data[i + 1];
+        const b = frame.data[i + 2];
+        const brightness = (r + g + b) / 3;
+        total += brightness;
+      }
+      return total / (len / 4);
+    }
+
+    function captureFrame() {
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+      const brightness = getBrightness(frame);
+      const now = Date.now() - startTime;
+      data.push({ time: now, brightness });
+      chart.data.labels.push(now);
+      chart.data.datasets[0].data.push(brightness);
+      chart.update('none');
+    }
+
+    function startLogging() {
+      if (logging) return;
+      logging = true;
+      data.length = 0;
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      chart.update();
+      startTime = Date.now();
+      interval = setInterval(captureFrame, 1);
+    }
+
+    function stopLogging() {
+      logging = false;
+      clearInterval(interval);
+      const csv = 'time(ms),brightness\n' + data.map(d => `${d.time},${d.brightness.toFixed(2)}`).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'light_signal.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function copyCSV() {
+      const csv = 'time(ms),brightness\n' + data.map(d => `${d.time},${d.brightness.toFixed(2)}`).join('\n');
+      navigator.clipboard.writeText(csv).then(() => {
+        alert('CSV copied to clipboard!');
+      }, err => {
+        alert('Failed to copy: ' + err);
+      });
+    }
+
+    setupCamera();
+  </script>
+</body>
+</html>
